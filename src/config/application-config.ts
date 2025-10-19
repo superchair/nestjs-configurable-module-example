@@ -57,4 +57,8 @@ export class ApplicationConfig {
     'test',
   ])
   BUGSNAG_RELEASE_STAGE: string
+
+  @IsNotEmpty()
+  @IsString()
+  BASE_URL: string
 }

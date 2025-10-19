@@ -14,6 +14,9 @@ import {
 } from '@platform/authentication'
 import { APP_FILTER } from '@nestjs/core'
 import { BugsnagModule } from 'nestjs-bugsnag'
+import { OuterModuleModule } from './outer-module/outer-module.module'
+import { UserOuterServiceController } from './user-outer-service/user-outer-service.controller'
+import { OuterModuleOptions } from './outer-module/outer-module.definition'
 
 export const APPLICATION_NAME = 'configurable-module-example-rest-api'
 
@@ -75,6 +78,16 @@ export const loggerModuleImpl = LoggerModule.forRootAsync({
     }),
 
     loggerModuleImpl,
+
+    OuterModuleModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (
+        configService: ConfigService<ApplicationConfig, true>,
+      ): OuterModuleOptions => ({
+        baseUrl: configService.get('BASE_URL'),
+      }),
+    }),
   ],
 
   providers: [
@@ -83,5 +96,7 @@ export const loggerModuleImpl = LoggerModule.forRootAsync({
       useClass: ExceptionsFilter,
     },
   ],
+
+  controllers: [UserOuterServiceController],
 })
 export class AppModule {}
