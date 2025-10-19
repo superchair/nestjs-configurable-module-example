@@ -36,13 +36,14 @@ export class OuterModuleModule extends ConfigurableModuleClass {
       imports: [
         ...(imports || []),
         HttpModule.registerAsync({
+          imports,
+          inject: [MODULE_OPTIONS_TOKEN],
+          extraProviders: providers,
           useFactory: (options: typeof OPTIONS_TYPE) => {
             return {
               baseURL: options?.baseUrl,
             }
           },
-          inject: [MODULE_OPTIONS_TOKEN],
-          extraProviders: providers,
         }),
       ],
       providers,
