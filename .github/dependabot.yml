@@ -1,0 +1,31 @@
+version: 2
+registries:
+  codeartifact-npm:
+    type: npm-registry
+    url: https://autoverify-456969868172.d.codeartifact.us-east-1.amazonaws.com/npm/autoverify/
+    token: ${{ secrets.CODEARTIFACT_TOKEN }}
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "main"
+    registries:
+      - codeartifact-npm
+    versioning-strategy: lockfile-only
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      platform:
+        patterns:
+          - "@platform/*"
+      dev-dependencies:
+        dependency-type: "development"
+        exclude-patterns:
+          - "@platform/*"
+      production-dependencies:
+        dependency-type: "production"
+        exclude-patterns:
+          - "@platform/*"

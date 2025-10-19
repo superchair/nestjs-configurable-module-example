@@ -1,0 +1,45 @@
+name: Refresh CodeArtifact Token for Dependabot
+
+on:
+  schedule:
+  - cron: "0 */8 * * *" # every 8 hours
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS Credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubAction-CodeArtifact-Role
+        aws-region: us-east-1
+
+    - name: Get New CodeArtifact Authorization Token
+      id: get_token
+      env:
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      run: |
+        TOKEN=$(aws codeartifact get-authorization-token \
+          --domain autoverify \
+          --domain-owner "$AWS_ACCOUNT_ID" \
+          --query authorizationToken \
+          --output text)
+        echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+    - name: Update Dependabot secret
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT_FOR_SECRETS }}
+        CODEARTIFACT_TOKEN: ${{ steps.get_token.outputs.token }}
+      run: |
+        gh secret set CODEARTIFACT_TOKEN \
+          --app dependabot \
+          --repo "${{ github.repository }}" \
+          --body "$CODEARTIFACT_TOKEN"
+
+    - name: Summary
+      run: echo "Dependabot secret CODEARTIFACT_TOKEN refreshed."

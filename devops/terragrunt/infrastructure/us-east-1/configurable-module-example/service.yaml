@@ -1,0 +1,4 @@
+service_name: "configurable-module-example"
+
+service_tags: 
+  Service: "configurable-module-example"

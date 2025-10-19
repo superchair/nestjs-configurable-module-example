@@ -1,0 +1,147 @@
+// THIS FILE IS MEANT FOR REFERENCE ONLY
+
+// Add the following to `Active Choices Parameter`
+import groovy.json.JsonSlurper
+
+def repo = "platform/configurable-module-example-rest-api"
+
+// Get all image tags and their dates
+def listCmd = "/usr/local/bin/aws ecr describe-images --repository-name ${repo} --region us-east-1 --output json"
+def proc = listCmd.execute()
+def output = proc.inputStream.text
+proc.waitFor()
+
+def forbidden = ["dev-external-ecs", "staging-external-ecs", "prod-external-ecs", "latest"]
+def tagsWithDates = []
+
+try {
+    def json = new groovy.json.JsonSlurper().parseText(output)
+    // Each imageDetail may have multiple tags
+    for (img in json.imageDetails) {
+        if (img.imageTags) {
+            for (tag in img.imageTags) {
+                if (!(tag in forbidden)) {
+                    tagsWithDates << [tag: tag, date: img.imagePushedAt]
+                }
+            }
+        }
+    }
+    // Sort tags by date, newest first
+    tagsWithDates.sort { a, b -> b.date <=> a.date }
+} catch (Exception e) {
+    return ["Error: ${e}"]
+}
+
+// Return only the sorted tag names
+def sortedTags = tagsWithDates.collect { it.tag }
+return sortedTags ?: ["No tags found"]
+
+
+
+// The pipeline that tags and deploys the docker image
+// expects two input parameters: IMAGE_TAG and ECS_CLUSTER
+pipeline {
+  agent {
+    label "ecs"
+  }
+
+  environment {
+    SERVICE_NAME = 'configurable-module-example'
+    APPLICATION_NAME = 'rest-api'
+    AWS_REGION = 'us-east-1'
+    AV_AWS_ACCOUNT_ID = credentials('AV_AWS_ACCOUNT_ID')
+    ECR_REPO = "platform/configurable-module-example-rest-api"
+  }
+  
+  // No parameters block needed - configured in UI
+  
+  stages {
+    stage('Checkout Tag') {
+      steps {
+        script {
+          if (!params.IMAGE_TAG || params.IMAGE_TAG.trim() == '') {
+            error('IMAGE_TAG parameter is required. Please restart the build and provide a valid image tag.')
+          }
+        }
+        
+        checkout([$class: 'GitSCM',
+          branches: [[name: "refs/tags/${params.IMAGE_TAG}"]],
+          userRemoteConfigs: [[
+            url: 'https://github.com/mobials/configurable-module-example.git',
+            credentialsId: 'github_token'
+          ]]
+        ])
+      }
+    }
+
+    stage('Tag Image with ECS Cluster') {
+      steps {
+        script {
+          // Login to ECR
+          sh('''
+            aws ecr get-login-password \\
+              --region ''' + env.AWS_REGION + ''' | docker login \\
+              --username AWS \\
+              --password-stdin \\
+              ''' + env.AV_AWS_ACCOUNT_ID + '''.dkr.ecr.''' + env.AWS_REGION + '''.amazonaws.com
+          ''')
+          
+          // Define source and target image URIs
+          def sourceImageUri = "${env.AV_AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}:${params.IMAGE_TAG}"
+          def targetImageUri = "${env.AV_AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/${env.ECR_REPO}:${params.ECS_CLUSTER}"
+          
+          // Pull the source image
+          sh 'docker pull ' + sourceImageUri
+          
+          // Tag the image with the ECS cluster name
+          sh 'docker tag ' + sourceImageUri + ' ' + targetImageUri
+          
+          // Push the tagged image
+          sh 'docker push ' + targetImageUri
+        }
+      }
+    }
+
+    stage('Deploy to ECS') {
+      steps {
+        script {
+          // Define ECS service name dynamically
+          def ecsServiceName = env.SERVICE_NAME + '-' + env.APPLICATION_NAME
+          
+          sh('mkdir -p ~/.ssh')
+          sh("""
+            aws ssm get-parameter \\
+              --name "/azuredevops/deployer/private_key" \\
+              --with-decryption \\
+              --query "Parameter.Value" \\
+              --output text > ~/.ssh/id_rsa
+          """)
+          sh('chmod 600 ~/.ssh/id_rsa')
+          sh('eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_rsa')
+          sh('ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts')
+
+          // run terragrunt from the correct directory
+          dir('devops/terragrunt/infrastructure/' + env.AWS_REGION + '/' + env.SERVICE_NAME + '/' + env.APPLICATION_NAME + '/ecs/' + params.ECS_CLUSTER) {
+            sh 'terragrunt init'
+            sh 'terragrunt apply --auto-approve'
+          }
+
+          // force ECS redeployment
+          sh("""
+            aws ecs update-service \\
+              --cluster ${params.ECS_CLUSTER} \\
+              --service ${ecsServiceName} \\
+              --region ${env.AWS_REGION} \\
+              --force-new-deployment
+          """)
+          sh("""
+            aws ecs wait services-stable \\
+              --cluster ${params.ECS_CLUSTER} \\
+              --services ${ecsServiceName} \\
+              --region ${env.AWS_REGION}
+          """)
+        }
+      }
+    }
+  }
+}

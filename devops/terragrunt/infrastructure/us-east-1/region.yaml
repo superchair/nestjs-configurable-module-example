@@ -1,0 +1,2 @@
+# Region-specific resources
+repository_kms_key_arn: "arn:aws:kms:us-east-1:456969868172:key/5ebc4d20-37ec-405f-92f8-bb98a90269c0"

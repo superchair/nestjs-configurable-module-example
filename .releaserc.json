@@ -1,0 +1,39 @@
+{
+  "tagFormat": "${version}",
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": false
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [],
+        "successCommentCondition": "<% return issue.pull_request && !branch.prerelease; %>",
+        "discussionCategoryName": false,
+        "addReleases": "top"
+      }
+    ]
+  ],
+  "branches": [
+    "main",
+    {
+      "name": "*",
+      "prerelease": true
+    }
+  ]
+}

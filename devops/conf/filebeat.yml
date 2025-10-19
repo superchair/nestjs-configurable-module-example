@@ -1,0 +1,53 @@
+filebeat.inputs:
+  - type: filestream
+    id: configurable-module-example-rest-api-logs
+    paths:
+      - ${LOG_PATH:-/var/log/configurable-module-example-rest-api}/*.log
+    parsers:
+      - multiline:
+          type: pattern
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z configurable-module-example-rest-api'
+          negate: true
+          match: after
+    fields_under_root: true
+    fields:
+      component: 'application'
+
+# Configure paths
+path.data: /tmp/filebeat/data
+path.logs: /tmp/filebeat/logs
+path.home: /tmp/filebeat
+
+# Reduce monitoring noise in container environments
+logging.level: warning
+logging.to_stderr: true
+logging.metrics.enabled: false
+
+# Disable internal monitoring metrics
+monitoring.enabled: false
+
+# Disable modules to prevent directory error
+filebeat.config.modules:
+  enabled: false
+
+fields_under_root: true
+fields:
+  service_name: 'configurable-module-example'
+  application_name: 'rest-api'
+  # ECS metadata (will be empty/null if not running in ECS)
+  aws_region: '${AWS_REGION:-unknown}'
+  ecs_cluster: '${AWS_ECS_CLUSTER_NAME:-unknown}'
+  ecs_service: '${AWS_ECS_SERVICE_NAME:-unknown}'
+  ecs_task_definition: '${AWS_ECS_TASK_DEFINITION:-unknown}'
+  ecs_task_arn: '${AWS_ECS_TASK_ARN:-unknown}'
+
+cloud.id: "${FILEBEAT_CLOUD_ID}"
+cloud.auth: "${FILEBEAT_CLOUD_AUTH}"
+
+setup.template.name: "filebeat-%{[beat.version]}"
+setup.template.fields: "/etc/filebeat/fields.yml"
+setup.template.pattern: "filebeat-%{[beat.version]}-*"
+
+processors:
+  - drop_fields:
+      fields: ['prospector.type', 'input.type', 'beat.name', 'beat.hostname', 'agent.name', 'agent.hostname']

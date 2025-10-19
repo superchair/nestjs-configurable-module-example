@@ -1,0 +1,143 @@
+pipeline {
+  agent {
+    label "ecs"
+  }
+  
+  tools {
+    nodejs('22.13.1')
+  }
+
+  environment {
+    SERVICE_NAME = 'configurable-module-example'
+    APPLICATION_NAME = 'rest-api'
+    AWS_REGION = 'us-east-1'
+    AV_AWS_ACCOUNT_ID = credentials('AV_AWS_ACCOUNT_ID')
+    ECR_REPO = "platform/configurable-module-example-rest-api"
+  }
+
+  stages {
+    stage('NPM Login') {
+      steps {
+        sh('aws codeartifact login --tool npm --repository autoverify --domain autoverify --domain-owner $AV_AWS_ACCOUNT_ID --region $AWS_REGION')
+      }
+    }
+
+    stage('Install Dependencies') {
+      steps{
+        sh('npm install')
+      }
+    }
+
+    stage('Test') {
+      steps {
+        sh('npm run test:cov')
+        sh('npm run test:e2e')
+      }
+    }
+
+    stage('Build') {
+      steps {
+        sh('nest build')
+      }
+    }
+
+    stage('Release') {
+      when {
+        not {
+          changeRequest()
+        }
+      }
+      stages {
+        stage('Run semantic-release') {
+          steps {
+            script {
+              withCredentials([
+                usernamePassword(
+                  credentialsId: 'mobialsbot_github_token',
+                  usernameVariable: 'USERNAME',
+                  passwordVariable: 'GITHUB_TOKEN'
+                )
+              ]) {
+                sh('npx semantic-release')
+              }
+
+              // determine release version
+              env.RELEASE_VERSION = sh(
+                  script: "node -p \"require('./package.json').version || ''\"",
+                  returnStdout: true
+              ).trim()
+            }
+          }
+        }
+
+        stage('Build, Publish, Deploy Artifacts') {
+          when {
+            not {
+              environment name: 'RELEASE_VERSION', value: ''
+            }
+          }
+          stages {
+            stage('Build and Publish Docker Image') {
+              steps {
+                script {
+                  withCredentials([string(credentialsId: 'AV_AWS_ACCOUNT_ID', variable: 'AWS_ACCOUNT_ID')]) {
+                    script {
+                      def repoUrl = "${AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+
+                      // log in to npm with CodeArtifact
+                      sh('''
+                        aws codeartifact login \
+                          --tool npm \
+                          --repository autoverify \
+                          --domain autoverify \
+                          --domain-owner ''' + AWS_ACCOUNT_ID + ''' \
+                          --region ''' + env.AWS_REGION + '''
+                      ''')
+                      
+                      sh('''
+                        DOCKER_BUILDKIT=1 docker build \
+                          --tag ''' + repoUrl + '/' + env.ECR_REPO + ':' + env.RELEASE_VERSION + ''' \
+                          --build-arg BUILD_NUMBER=''' + env.BUILD_NUMBER + ''' \
+                          --build-arg BUILD_VERSION=''' + env.RELEASE_VERSION + ''' \
+                          --secret id=npmrc,src=$HOME/.npmrc \
+                          --target release .
+                      ''')
+
+                      // Login to ECR
+                      sh('aws ecr get-login-password ' + '--region ' + env.AWS_REGION + ' | docker login --username AWS --password-stdin ' + repoUrl)
+
+                      // Push the image to ECR (all tags)
+                      sh('docker push ' + repoUrl + '/' + env.ECR_REPO + ' -a')
+                    }
+                  }
+                }
+              }
+            }
+
+            stage('Trigger Deployment') {
+              steps {
+                script {
+                  // Determine ECS cluster based on trigger type and branch
+                  def ecsCluster = 'dev-external-ecs'  // Default for user-triggered builds
+                  
+                  if (env.BRANCH_NAME == 'main' && currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause').isEmpty()) {
+                    // Automated merge to main (not user-triggered)
+                    ecsCluster = 'staging-external-ecs'
+                  }
+                  
+                  // Trigger the deployment pipeline
+                  build job: 'Platform Services/Deployable Services/configurable-module-example/rest-api-deploy', 
+                        parameters: [
+                          string(name: 'IMAGE_TAG', value: env.RELEASE_VERSION),
+                          string(name: 'ECS_CLUSTER', value: ecsCluster)
+                        ], 
+                        wait: false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

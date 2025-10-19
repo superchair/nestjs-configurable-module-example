@@ -1,0 +1,10 @@
+application_name: "rest-api"
+repository_name: "platform/configurable-module-example-rest-api"
+application_port: 80
+
+# IAM role ARNs (moved from root.hcl for better organization)
+execution_role_arn: "arn:aws:iam::456969868172:role/ecsTaskExecutionRole"
+ecs_iam_role: "arn:aws:iam::456969868172:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS"
+
+application_tags: 
+  Application: "rest-api"
