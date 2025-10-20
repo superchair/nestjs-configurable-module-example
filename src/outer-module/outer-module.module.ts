@@ -10,6 +10,7 @@ import { HttpModule } from '@nestjs/axios'
 
 @Module({
   providers: [OuterServiceService],
+  exports: [OuterServiceService],
 })
 export class OuterModuleModule extends ConfigurableModuleClass {
   static register(options: typeof OPTIONS_TYPE): DynamicModule {
@@ -23,7 +24,7 @@ export class OuterModuleModule extends ConfigurableModuleClass {
         }),
       ],
       providers,
-      exports: [...(exports || []), OuterServiceService],
+      exports,
     }
   }
 
@@ -36,7 +37,7 @@ export class OuterModuleModule extends ConfigurableModuleClass {
       imports: [
         ...(imports || []),
         HttpModule.registerAsync({
-          imports,
+          imports: [...(imports || [])],
           inject: [MODULE_OPTIONS_TOKEN],
           extraProviders: providers,
           useFactory: (options: typeof OPTIONS_TYPE) => {
@@ -47,7 +48,7 @@ export class OuterModuleModule extends ConfigurableModuleClass {
         }),
       ],
       providers,
-      exports: [...(exports || []), OuterServiceService],
+      exports,
     }
   }
 }

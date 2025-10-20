@@ -15,7 +15,7 @@ import {
 import { APP_FILTER } from '@nestjs/core'
 import { BugsnagModule } from 'nestjs-bugsnag'
 import { OuterModuleModule } from './outer-module/outer-module.module'
-import { UserOuterServiceController } from './user-outer-service/user-outer-service.controller'
+import { OuterServiceTestController } from './user-outer-service/outer-service-test.controller'
 import { OuterModuleOptions } from './outer-module/outer-module.definition'
 
 export const APPLICATION_NAME = 'configurable-module-example-rest-api'
@@ -97,6 +97,6 @@ export const loggerModuleImpl = LoggerModule.forRootAsync({
     },
   ],
 
-  controllers: [UserOuterServiceController],
+  controllers: [OuterServiceTestController],
 })
 export class AppModule {}

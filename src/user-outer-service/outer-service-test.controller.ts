@@ -2,7 +2,7 @@ import { Controller, Get, InternalServerErrorException } from '@nestjs/common'
 import { OuterServiceService } from '../outer-module/outer-service/outer-service.service'
 
 @Controller()
-export class UserOuterServiceController {
+export class OuterServiceTestController {
   constructor(private readonly outerService: OuterServiceService) {}
 
   @Get()
